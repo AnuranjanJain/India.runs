@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="780" viewBox="0 0 1400 780">
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7c3aed"/>
+      <stop offset="55%" stop-color="#ec4899"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.13"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#ec4899"/>
+    </marker>
+    <style>
+      .title{font-family:Aptos,Inter,Arial,sans-serif;font-size:34px;font-weight:800;fill:#101828}
+      .sub{font-family:Aptos,Inter,Arial,sans-serif;font-size:17px;fill:#526176}
+      .label{font-family:Aptos,Inter,Arial,sans-serif;font-size:21px;font-weight:800;fill:#172033}
+      .body{font-family:Aptos,Inter,Arial,sans-serif;font-size:15px;fill:#40506a}
+      .small{font-family:Aptos,Inter,Arial,sans-serif;font-size:13px;fill:#64748b}
+      .box{rx:16;filter:url(#shadow);stroke-width:2}
+      .line{stroke:#ec4899;stroke-width:3;fill:none;marker-end:url(#arrow)}
+      .thin{stroke:#94a3b8;stroke-width:2;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+
+  <rect width="1400" height="780" fill="#f8fafc"/>
+  <rect x="0" y="0" width="1400" height="18" fill="url(#brand)"/>
+  <text x="70" y="72" class="title">SkillBridge Recruiter - System Architecture</text>
+  <text x="70" y="104" class="sub">Offline deterministic ranking plus hosted 100K demo, with evidence-only explanations and a validated top-100 export.</text>
+
+  <rect x="52" y="132" width="1296" height="205" rx="20" fill="#ffffff" stroke="#dbe4ee"/>
+  <text x="78" y="164" class="label">Input & Understanding</text>
+  <rect class="box" x="90" y="202" width="230" height="86" fill="#eff6ff" stroke="#2563eb"/>
+  <text x="116" y="235" class="label">Job Description</text>
+  <text x="116" y="260" class="body">DOCX/Text role input</text>
+
+  <rect class="box" x="430" y="202" width="270" height="86" fill="#f5f3ff" stroke="#7c3aed"/>
+  <text x="456" y="232" class="label">JD Intelligence</text>
+  <text x="456" y="257" class="body">must-haves, nice-to-haves</text>
+  <text x="456" y="278" class="body">disqualifiers, logistics</text>
+
+  <rect class="box" x="810" y="202" width="245" height="86" fill="#eff6ff" stroke="#2563eb"/>
+  <text x="836" y="232" class="label">Candidate Pool</text>
+  <text x="836" y="257" class="body">100K JSONL profiles</text>
+  <text x="836" y="278" class="body">skills + Redrob signals</text>
+
+  <path class="line" d="M320 245 H430"/>
+  <path class="thin" d="M700 245 H810"/>
+
+  <rect x="52" y="370" width="1296" height="214" rx="20" fill="#ffffff" stroke="#dbe4ee"/>
+  <text x="78" y="402" class="label">Ranking, Trust & Review</text>
+
+  <rect class="box" x="100" y="438" width="290" height="92" fill="#f5f3ff" stroke="#7c3aed"/>
+  <text x="126" y="468" class="label">Hybrid Ranking Engine</text>
+  <text x="126" y="493" class="body">semantic fit + career proof</text>
+  <text x="126" y="514" class="body">behavior + logistics + quality</text>
+
+  <rect class="box" x="520" y="438" width="285" height="92" fill="#fff1f2" stroke="#e11d48"/>
+  <text x="546" y="468" class="label">Evidence Layer</text>
+  <text x="546" y="493" class="body">source-grounded reasoning</text>
+  <text x="546" y="514" class="body">risk flags + why-not-higher</text>
+
+  <rect class="box" x="935" y="438" width="285" height="92" fill="#ecfdf5" stroke="#0f766e"/>
+  <text x="961" y="468" class="label">Recruiter Webapp</text>
+  <text x="961" y="493" class="body">command center, shortlist</text>
+  <text x="961" y="514" class="body">compare, near misses, export</text>
+
+  <path class="line" d="M390 484 H520"/>
+  <path class="line" d="M805 484 H935"/>
+  <path class="thin" d="M565 288 V438"/>
+  <path class="thin" d="M932 288 C932 350 245 350 245 438"/>
+
+  <rect x="52" y="616" width="610" height="108" rx="20" fill="#ffffff" stroke="#dbe4ee"/>
+  <text x="78" y="648" class="label">Offline Challenge Path</text>
+  <text x="78" y="676" class="body">rank.py streams candidates on CPU, keeps top-K via heap selection,</text>
+  <text x="78" y="699" class="body">then validate_submission.py checks the exact top-100 output format.</text>
+
+  <rect x="738" y="616" width="610" height="108" rx="20" fill="#ffffff" stroke="#dbe4ee"/>
+  <text x="764" y="648" class="label">Hosted Demo Path</text>
+  <text x="764" y="676" class="body">GitHub Pages serves the 100K pool as static chunks.</text>
+  <text x="764" y="699" class="body">The React demo shows top-K exploration without hosted LLM calls.</text>
+
+  <path class="line" d="M1220 484 C1290 484 1290 642 1220 670"/>
+  <rect class="box" x="1130" y="636" width="150" height="52" fill="#ecfdf5" stroke="#0f766e"/>
+  <text x="1154" y="658" class="label" style="font-size:17px">Top-100 XLSX</text>
+  <text x="1154" y="678" class="small">validated output</text>
+</svg>
