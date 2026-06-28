@@ -5,8 +5,8 @@ SkillBridge Recruiter is a recruiter-facing MVP for the Redrob candidate discove
 ## Demo
 
 - Live app: [SkillBridge Recruiter](https://anuranjanjain.github.io/India.runs/)
-- 1-minute website demo with voiceover and subtitles: [watch MP4](https://anuranjanjain.github.io/India.runs/demo/SkillBridge-Recruiter-Website-Demo-1min.mp4)
-- Subtitle file: [download SRT](https://anuranjanjain.github.io/India.runs/demo/SkillBridge-Recruiter-Website-Demo-1min.srt)
+- 1-minute website demo with voiceover and subtitles: [watch MP4](https://raw.githubusercontent.com/AnuranjanJain/India.runs/main/frontend/public/demo/SkillBridge-Recruiter-Website-Demo-1min.mp4)
+- Subtitle file: [download SRT](https://raw.githubusercontent.com/AnuranjanJain/India.runs/main/frontend/public/demo/SkillBridge-Recruiter-Website-Demo-1min.srt)
 
 ## What It Does
 
