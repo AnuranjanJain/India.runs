@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "source": "candidates.jsonl",
+  "total_candidates": 100000,
+  "chunk_size": 10000,
+  "chunks": [
+    {
+      "file": "candidate_chunks/candidates_000.json",
+      "count": 10000,
+      "bytes": 46196116
+    },
+    {
+      "file": "candidate_chunks/candidates_001.json",
+      "count": 10000,
+      "bytes": 46310907
+    },
+    {
+      "file": "candidate_chunks/candidates_002.json",
+      "count": 10000,
+      "bytes": 46373991
+    },
+    {
+      "file": "candidate_chunks/candidates_003.json",
+      "count": 10000,
+      "bytes": 46170231
+    },
+    {
+      "file": "candidate_chunks/candidates_004.json",
+      "count": 10000,
+      "bytes": 46209334
+    },
+    {
+      "file": "candidate_chunks/candidates_005.json",
+      "count": 10000,
+      "bytes": 46237753
+    },
+    {
+      "file": "candidate_chunks/candidates_006.json",
+      "count": 10000,
+      "bytes": 46319414
+    },
+    {
+      "file": "candidate_chunks/candidates_007.json",
+      "count": 10000,
+      "bytes": 46310382
+    },
+    {
+      "file": "candidate_chunks/candidates_008.json",
+      "count": 10000,
+      "bytes": 46214151
+    },
+    {
+      "file": "candidate_chunks/candidates_009.json",
+      "count": 10000,
+      "bytes": 46165782
+    }
+  ]
+}
