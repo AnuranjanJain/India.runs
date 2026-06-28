@@ -35,6 +35,15 @@ import "./styles.css";
 
 const API = "";
 const STATIC_DATA_URL = `${import.meta.env.BASE_URL}data/demo_candidates.json`;
+const STATIC_MANIFEST_URL = `${import.meta.env.BASE_URL}data/candidates_manifest.json`;
+
+type StaticCandidateManifest = {
+  version: number;
+  source: string;
+  total_candidates: number;
+  chunk_size: number;
+  chunks: Array<{ file: string; count: number; bytes: number }>;
+};
 
 type JobAnalysis = {
   title: string;
@@ -1021,19 +1030,36 @@ async function loadDatasetSummary(): Promise<DatasetSummary> {
   } catch {
     // Static deploy fallback below.
   }
+  const manifest = await loadStaticManifest();
+  if (manifest) return staticDatasetSummary(manifest.total_candidates, "Hosted 100K pool");
   const candidates = await loadStaticCandidates();
-  return staticDatasetSummary(candidates.length);
+  return staticDatasetSummary(candidates.length, "Demo pool");
 }
 
 async function rankStaticDemo(weights: Weights, topK = 100): Promise<RankResponse> {
-  const candidates = await loadStaticCandidates();
-  const results = candidates
-    .map((candidate) => scoreStaticCandidate(candidate, weights))
-    .sort((a, b) => b.score - a.score || a.candidate_id.localeCompare(b.candidate_id))
-    .slice(0, topK)
-    .map((row, index) => ({ ...row, rank: index + 1 }));
-  const dataset = staticDatasetSummary(candidates.length);
-  const diagnostics = buildStaticDiagnostics(results, candidates.length);
+  const manifest = await loadStaticManifest();
+  let results: CandidateResult[] = [];
+  let totalCandidates = 0;
+  if (manifest) {
+    totalCandidates = manifest.total_candidates;
+    for (const chunk of manifest.chunks) {
+      const candidates = await loadStaticChunk(chunk.file);
+      const scored = candidates.map((candidate) => scoreStaticCandidate(candidate, weights));
+      results = [...results, ...scored]
+        .sort((a, b) => b.score - a.score || a.candidate_id.localeCompare(b.candidate_id))
+        .slice(0, topK);
+    }
+  } else {
+    const candidates = await loadStaticCandidates();
+    totalCandidates = candidates.length;
+    results = candidates
+      .map((candidate) => scoreStaticCandidate(candidate, weights))
+      .sort((a, b) => b.score - a.score || a.candidate_id.localeCompare(b.candidate_id))
+      .slice(0, topK);
+  }
+  results = results.map((row, index) => ({ ...row, rank: index + 1 }));
+  const dataset = staticDatasetSummary(totalCandidates, manifest ? "Hosted 100K pool" : "Demo pool");
+  const diagnostics = buildStaticDiagnostics(results, totalCandidates);
   return {
     run_id: "run_static_demo",
     job_id: "job_static_demo",
@@ -1047,8 +1073,8 @@ async function rankStaticDemo(weights: Weights, topK = 100): Promise<RankRespons
       risk_flags: results.reduce((sum, row) => sum + row.risk_flags.length, 0),
       selected_top_k: results.length,
       official_export_rows: Math.min(results.length, 100),
-      total_candidates: candidates.length,
-      valid_candidates: candidates.length,
+      total_candidates: totalCandidates,
+      valid_candidates: totalCandidates,
       missing_data_candidates: 0
     },
     dataset,
@@ -1056,9 +1082,9 @@ async function rankStaticDemo(weights: Weights, topK = 100): Promise<RankRespons
   };
 }
 
-function staticDatasetSummary(total: number): DatasetSummary {
+function staticDatasetSummary(total: number, sourceLabel = "Demo pool"): DatasetSummary {
   return {
-    source_label: "Demo pool",
+    source_label: sourceLabel,
     total_candidates: total,
     valid_candidates: total,
     missing_data_candidates: 0,
@@ -1103,11 +1129,48 @@ function buildStaticDiagnostics(results: CandidateResult[], totalCandidates: num
 }
 
 async function findStaticCandidate(candidateId: string): Promise<Candidate | null> {
+  const manifest = await loadStaticManifest();
+  if (manifest) {
+    for (const chunk of manifest.chunks) {
+      const candidates = await loadStaticChunk(chunk.file);
+      const match = candidates.find((candidate) => candidate.candidate_id === candidateId);
+      if (match) return match;
+    }
+    return null;
+  }
   const candidates = await loadStaticCandidates();
   return candidates.find((candidate) => candidate.candidate_id === candidateId) ?? null;
 }
 
 let staticCandidateCache: Candidate[] | null = null;
+let staticManifestCache: StaticCandidateManifest | null | undefined;
+const staticChunkCache = new Map<string, Candidate[]>();
+
+async function loadStaticManifest(): Promise<StaticCandidateManifest | null> {
+  if (staticManifestCache !== undefined) return staticManifestCache;
+  try {
+    const response = await fetch(STATIC_MANIFEST_URL);
+    if (!response.ok) {
+      staticManifestCache = null;
+      return null;
+    }
+    staticManifestCache = (await response.json()) as StaticCandidateManifest;
+    return staticManifestCache;
+  } catch {
+    staticManifestCache = null;
+    return null;
+  }
+}
+
+async function loadStaticChunk(file: string): Promise<Candidate[]> {
+  const cached = staticChunkCache.get(file);
+  if (cached) return cached;
+  const response = await fetch(`${import.meta.env.BASE_URL}data/${file}`);
+  if (!response.ok) throw new Error(`Static candidate chunk is unavailable: ${file}`);
+  const rows = (await response.json()) as Candidate[];
+  staticChunkCache.set(file, rows);
+  return rows;
+}
 
 async function loadStaticCandidates(): Promise<Candidate[]> {
   if (staticCandidateCache) return staticCandidateCache;

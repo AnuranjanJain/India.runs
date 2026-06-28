@@ -51,7 +51,7 @@ python .\data\validate_submission.py .\submission.csv
 
 `--top-n` supports `100`, `250`, `500`, and `1000` for exploration. The CSV written by `rank.py` is always the official top-100 submission format.
 
-The repo includes `data/demo_candidates.json` with 200 candidates for fast UI/demo export. The full `candidates.jsonl` is intentionally ignored because it is large.
+The repo includes `data/demo_candidates.json` with 10,000 candidates for fast local demo runs. The full local `data/candidates.jsonl` is intentionally ignored because it is large, while GitHub Pages serves the 100,000-candidate pool through static chunks under `frontend/public/data/candidate_chunks/`.
 
 ## API
 
