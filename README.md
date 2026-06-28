@@ -129,11 +129,20 @@ flowchart LR
 
 ---
 
-## Architecture
+## System Architecture
 
 <div align="center">
-  <img src="docs/assets/skillbridge-system-architecture.svg" alt="SkillBridge system architecture" width="900">
+  <img src="docs/assets/skillbridge-system-architecture.png" alt="SkillBridge system architecture" width="900">
 </div>
+
+| Layer | Responsibility |
+| --- | --- |
+| JD Intelligence | Parses the job description into role requirements, disqualifiers, logistics, and culture signals. |
+| Candidate Stream | Reads the candidate pool from JSONL/static chunks without requiring hosted model calls. |
+| Hybrid Ranker | Scores semantic fit, career proof, trust, logistics, and risk penalties deterministically. |
+| Evidence Layer | Builds explanations only from real candidate fields and Redrob-style signals. |
+| Recruiter UI | Provides shortlist, candidate audit, comparison, control room, and top-K exploration. |
+| Export Guardrail | Produces and validates the official top-100 challenge output. |
 
 ### Challenge-Safe Design
 
