@@ -8,6 +8,15 @@ SkillBridge Recruiter is a recruiter-facing MVP for the Redrob candidate discove
 - Streams candidates and ranks them using career proof, skill trust, JD fit, evaluation depth, Redrob behavioral signals, logistics, profile quality, and anti-keyword-stuffing checks.
 - Shows a recruiter dashboard, shortlist, candidate evidence drawer, comparison view, control sliders, export, and validation.
 - Generates explanations only from candidate fields so reasoning stays evidence-backed.
+- Adds a Judge Brief, signal fingerprints, recruiter verdicts, proof chains, and a decision memo so reviewers can see why the product is different in under a minute.
+
+## Why It Stands Out
+
+- **Judge Brief**: a dedicated page explains the core thesis, guardrails, anti-keyword-stuffing strategy, and proof scorecard.
+- **Signal Fingerprints**: each candidate gets compact tags for proof strength, trust, availability, logistics, and risk.
+- **Proof Chain**: the detail view shows how JD intent, career evidence, trust, and penalties shaped the recommendation.
+- **Recruiter Decision Memo**: export includes a human-readable shortlist summary in addition to the challenge CSV.
+- **Challenge-safe architecture**: the UI demo can run online, while the official ranking path remains deterministic, offline, CPU-only, and reproducible.
 
 ## Run The Webapp
 

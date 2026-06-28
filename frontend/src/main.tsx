@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   Activity,
   AlertTriangle,
+  Award,
   BarChart3,
   BrainCircuit,
   BriefcaseBusiness,
@@ -10,20 +11,24 @@ import {
   ChevronRight,
   ClipboardCheck,
   Download,
+  FileCheck2,
   FileText,
+  Fingerprint,
   Filter,
   Gauge,
   GitCompare,
   Layers3,
   Loader2,
-  MapPin,
+  LockKeyhole,
+  Radar,
   Search,
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Target,
+  Trophy,
   UserCheck,
-  X
 } from "lucide-react";
 import "./styles.css";
 
@@ -105,6 +110,7 @@ const defaultWeights: Weights = {
 
 const tabs = [
   ["dashboard", "Dashboard", BarChart3],
+  ["brief", "Judge Brief", Trophy],
   ["jd", "JD Intelligence", BrainCircuit],
   ["shortlist", "Shortlist", UserCheck],
   ["compare", "Compare", GitCompare],
@@ -247,6 +253,7 @@ function App() {
         {active === "dashboard" && (
           <Dashboard data={rankData} onRun={() => runRank("demo")} loading={loading} />
         )}
+        {active === "brief" && <JudgeBrief data={rankData} onRun={() => runRank("demo")} loading={loading} />}
         {active === "jd" && <JDIntelligence analysis={analysis} />}
         {active === "shortlist" && (
           <Shortlist results={results} selected={selected} onSelect={openCandidate} selectedFull={selectedFull} />
@@ -280,6 +287,11 @@ function Dashboard({ data, onRun, loading }: { data: RankResponse | null; onRun:
           <p>
             SkillBridge Recruiter reads the role, weighs career proof and Redrob behavior, then produces a shortlist with evidence, risk flags, and export-ready rankings.
           </p>
+          <div className="hero-badges">
+            <span><Award size={15} /> Built for judging clarity</span>
+            <span><LockKeyhole size={15} /> No network ranking path</span>
+            <span><Fingerprint size={15} /> Evidence-only reasoning</span>
+          </div>
         </div>
         <button className="primary-button large" onClick={onRun} disabled={loading}>
           {loading ? <Loader2 className="spin" size={18} /> : <Search size={18} />} Start Ranking
@@ -304,7 +316,100 @@ function Dashboard({ data, onRun, loading }: { data: RankResponse | null; onRun:
           ].map((item) => <span key={item}><CheckCircle2 size={15} />{item}</span>)}
         </div>
       </div>
+      <StandoutBand data={data} />
     </section>
+  );
+}
+
+function JudgeBrief({ data, onRun, loading }: { data: RankResponse | null; onRun: () => void; loading: boolean }) {
+  const results = data?.results ?? [];
+  const top = results[0];
+  const proofStats = summarizeProof(results);
+  return (
+    <section className="judge-grid">
+      <div className="judge-hero">
+        <div>
+          <p className="eyebrow">30-second judge story</p>
+          <h2>Not a search box. A recruiter decision engine.</h2>
+          <p>
+            SkillBridge Recruiter separates people who merely list AI terms from people whose career history,
+            behavioral signals, and logistics make them actually hireable for the role.
+          </p>
+        </div>
+        <button className="primary-button large" onClick={onRun} disabled={loading}>
+          {loading ? <Loader2 className="spin" size={18} /> : <Radar size={18} />} Run Proof Demo
+        </button>
+      </div>
+      <article className="judge-card thesis">
+        <PanelTitle icon={<Target />} title="Winning Thesis" />
+        <p>
+          The system ranks fit as a chain of proof: JD intent, career evidence, skill trust, platform behavior,
+          disqualifier checks, and recruiter-ready reasoning.
+        </p>
+      </article>
+      <article className="judge-card">
+        <PanelTitle icon={<Fingerprint />} title="Signal Fingerprint" />
+        <p>Every shortlisted candidate gets a compact fingerprint: proof strength, trust, availability, logistics, and risk.</p>
+        <div className="mini-fingerprint">
+          {(top ? fingerprintFor(top) : ["Proof", "Trust", "Availability", "Risk"]).map((item) => <span key={item}>{item}</span>)}
+        </div>
+      </article>
+      <article className="judge-card">
+        <PanelTitle icon={<ShieldCheck />} title="Hallucination Guardrail" />
+        <p>Reasoning is built only from fields already present in the candidate profile, career history, skills, and Redrob signals.</p>
+      </article>
+      <article className="judge-card">
+        <PanelTitle icon={<AlertTriangle />} title="Anti-Keyword Trap" />
+        <p>Claims are penalized when AI skill volume is high but career proof, production language, or evaluation evidence is weak.</p>
+      </article>
+      <article className="judge-card">
+        <PanelTitle icon={<FileCheck2 />} title="Submission-Ready" />
+        <p>The product demo, backend API, and offline CLI all converge on the exact CSV format required by the challenge.</p>
+      </article>
+      <article className="judge-card scorecard">
+        <PanelTitle icon={<Trophy />} title="Demo Proof Scorecard" />
+        <div className="proof-stats">
+          <span><b>{results.length || 0}</b> ranked</span>
+          <span><b>{proofStats.evidence}</b> evidence points</span>
+          <span><b>{proofStats.risks}</b> risks surfaced</span>
+          <span><b>{proofStats.avgTrust}</b> avg trust</span>
+        </div>
+      </article>
+      <div className="judge-script">
+        <PanelTitle icon={<ClipboardCheck />} title="Pitch Script" />
+        <p>
+          “Most rankers stop at semantic similarity. SkillBridge Recruiter asks the next recruiter question:
+          can I trust this candidate, can I contact them, and can I defend why they are shortlisted?”
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function StandoutBand({ data }: { data: RankResponse | null }) {
+  const stats = summarizeProof(data?.results ?? []);
+  return (
+    <div className="wide-band standout-band">
+      <PanelTitle icon={<Trophy />} title="Why This Stands Out In A Large Submission Pool" />
+      <div className="standout-grid">
+        <article>
+          <strong>Judge-visible differentiation</strong>
+          <span>Trust mechanics are visible in the UI, not hidden in a notebook.</span>
+        </article>
+        <article>
+          <strong>Evidence over vibes</strong>
+          <span>{stats.evidence || "Every"} explanation is grounded in profile fields and Redrob signals.</span>
+        </article>
+        <article>
+          <strong>Recruiter workflow complete</strong>
+          <span>Analyze, rank, inspect, compare, tune, export, and validate in one surface.</span>
+        </article>
+        <article>
+          <strong>Hard to fake fit</strong>
+          <span>Keyword stuffing, stale candidates, and logistics risk are surfaced before export.</span>
+        </article>
+      </div>
+    </div>
   );
 }
 
@@ -370,15 +475,23 @@ function Shortlist({
 function CandidateDrawer({ row, candidate }: { row: CandidateResult | null; candidate?: Candidate | null }) {
   if (!row) return <aside className="detail-panel"><EmptyState text="Select a candidate to inspect evidence." /></aside>;
   const profile = candidate?.profile ?? {};
+  const verdict = verdictFor(row);
   return (
     <aside className="detail-panel">
       <div className="drawer-head">
         <div>
           <p className="eyebrow">Rank #{row.rank}</p>
           <h2>{profile.current_title ?? row.candidate_id}</h2>
-          <span>{profile.current_company ?? "Candidate"} · {profile.location ?? "Location unknown"}</span>
+          <span>{profile.current_company ?? "Candidate"} - {profile.location ?? "Location unknown"}</span>
         </div>
         <ScoreBadge score={row.score} />
+      </div>
+      <div className={`verdict ${verdict.tone}`}>
+        <strong>{verdict.label}</strong>
+        <span>{verdict.copy}</span>
+      </div>
+      <div className="fingerprint-strip">
+        {fingerprintFor(row).map((item) => <span key={item}>{item}</span>)}
       </div>
       <div className="component-bars">
         {Object.entries(row.components).map(([key, value]) => (
@@ -389,12 +502,36 @@ function CandidateDrawer({ row, candidate }: { row: CandidateResult | null; cand
         ))}
       </div>
       <EvidenceBlock title="Evidence Mode" items={row.evidence.map((e) => `${labelize(e.source)}: ${e.text}`)} />
+      <ProofChain row={row} />
       <EvidenceBlock title="Why not higher?" items={row.why_not_higher} muted />
       <EvidenceBlock title="Risk flags" items={row.risk_flags} danger />
       <div className="skill-cloud">
         {(candidate?.skills ?? []).slice(0, 12).map((skill) => <span key={skill.name}>{skill.name}</span>)}
       </div>
     </aside>
+  );
+}
+
+function ProofChain({ row }: { row: CandidateResult }) {
+  const steps = [
+    ["JD", row.components.semantic_fit, "Role intent match"],
+    ["Proof", row.components.career_proof, "Career evidence"],
+    ["Trust", row.trust_score, "Field-backed confidence"],
+    ["Risk", 1 - Math.min(row.risk_flags.length / 3, 1), "Penalty checks"]
+  ] as const;
+  return (
+    <div className="proof-chain">
+      <strong>Proof Chain</strong>
+      <div>
+        {steps.map(([label, value, copy]) => (
+          <span key={label}>
+            <b>{label}</b>
+            <meter min={0} max={1} value={value} />
+            <small>{copy}</small>
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -475,6 +612,7 @@ function ControlRoom({ weights, setWeights, onRun }: { weights: Weights; setWeig
 
 function ExportPanel({ runId, results }: { runId?: string; results: CandidateResult[] }) {
   const [validation, setValidation] = React.useState<string>("");
+  const brief = React.useMemo(() => buildRecruiterBrief(results), [results]);
   const csv = React.useMemo(() => {
     const lines = ["candidate_id,rank,score,reasoning"];
     results.forEach((row) => {
@@ -521,6 +659,11 @@ function ExportPanel({ runId, results }: { runId?: string; results: CandidateRes
           <button className="ghost-button" onClick={validate} disabled={!results.length}><ShieldCheck size={17} /> Validate</button>
         </div>
         {validation && <div className="success-strip">{validation}</div>}
+      </div>
+      <div className="main-panel">
+        <PanelTitle icon={<FileCheck2 />} title="Recruiter Decision Memo" />
+        <p className="lead">A judge-friendly explanation of what the shortlist proves beyond CSV compliance.</p>
+        <pre className="memo-preview">{brief}</pre>
       </div>
       <pre className="csv-preview">{csv || "Run ranking to preview the submission CSV."}</pre>
     </section>
@@ -575,6 +718,70 @@ function labelize(value: string) {
 
 function activeTitle(id: string) {
   return tabs.find((tab) => tab[0] === id)?.[1] ?? "SkillBridge Recruiter";
+}
+
+function verdictFor(row: CandidateResult) {
+  if (row.score >= 0.72 && row.risk_flags.length <= 1) {
+    return {
+      label: "Shortlist with confidence",
+      copy: "Strong enough to send to a recruiter with field-backed reasoning.",
+      tone: "strong"
+    };
+  }
+  if (row.score >= 0.52) {
+    return {
+      label: "Review before outreach",
+      copy: "Promising fit, but inspect proof chain and risks before contacting.",
+      tone: "review"
+    };
+  }
+  return {
+    label: "Hold for backup",
+    copy: "Useful as a long-tail candidate, not a primary shortlist recommendation.",
+    tone: "hold"
+  };
+}
+
+function fingerprintFor(row: CandidateResult) {
+  const tags: string[] = [];
+  tags.push(row.components.career_proof >= 0.55 ? "Proof-heavy" : "Proof-light");
+  tags.push(row.trust_score >= 0.62 ? "High-trust" : "Needs validation");
+  tags.push(row.components.behavioral_availability >= 0.55 ? "Reachable" : "Availability risk");
+  tags.push(row.components.logistics >= 0.7 ? "Logistics fit" : "Logistics watch");
+  if (row.risk_flags.length) tags.push(`${row.risk_flags.length} risk flag${row.risk_flags.length > 1 ? "s" : ""}`);
+  else tags.push("Clean risk pass");
+  return tags;
+}
+
+function summarizeProof(results: CandidateResult[]) {
+  if (!results.length) return { evidence: 0, risks: 0, avgTrust: "0%" };
+  const evidence = results.reduce((sum, row) => sum + row.evidence.length, 0);
+  const risks = results.reduce((sum, row) => sum + row.risk_flags.length, 0);
+  const avgTrust = `${Math.round((results.reduce((sum, row) => sum + row.trust_score, 0) / results.length) * 100)}%`;
+  return { evidence, risks, avgTrust };
+}
+
+function buildRecruiterBrief(results: CandidateResult[]) {
+  if (!results.length) {
+    return "Run a ranking job to generate a recruiter-ready decision memo.";
+  }
+  const top = results[0];
+  const stats = summarizeProof(results);
+  const highConfidence = results.filter((row) => row.score >= 0.7 && row.risk_flags.length <= 1).length;
+  const review = results.filter((row) => row.score >= 0.52 && row.score < 0.7).length;
+  return [
+    "SkillBridge Recruiter Decision Memo",
+    "",
+    `Top recommendation: ${top.candidate_id} at rank #${top.rank} with score ${Math.round(top.score * 100)} and trust ${Math.round(top.trust_score * 100)}%.`,
+    `Shortlist composition: ${highConfidence} high-confidence candidates, ${review} review candidates, ${results.length} total export-ready rows.`,
+    `Evidence quality: ${stats.evidence} field-grounded evidence points and ${stats.risks} explicit risk flags surfaced across the shortlist.`,
+    "",
+    "Why this shortlist is defensible:",
+    "- Candidate explanations are generated from profile, career history, skills, and Redrob behavioral signals only.",
+    "- Keyword-heavy candidates are penalized when career proof does not support the claimed AI skill surface.",
+    "- Availability, notice period, recruiter response, location, and work-mode fit are visible before export.",
+    "- Scores are deterministic and tied to a reproducible offline CLI path for the official submission."
+  ].join("\n");
 }
 
 async function rankStaticDemo(weights: Weights): Promise<RankResponse> {
