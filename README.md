@@ -2,6 +2,12 @@
 
 SkillBridge Recruiter is a recruiter-facing MVP for the Redrob candidate discovery challenge. It combines a SaaS-style webapp with a deterministic offline ranking engine that can produce the required `candidate_id,rank,score,reasoning` CSV.
 
+## Demo
+
+- Live app: [SkillBridge Recruiter](https://anuranjanjain.github.io/India.runs/)
+- 1-minute website demo with voiceover and subtitles: [watch MP4](https://anuranjanjain.github.io/India.runs/demo/SkillBridge-Recruiter-Website-Demo-1min.mp4)
+- Subtitle file: [download SRT](https://anuranjanjain.github.io/India.runs/demo/SkillBridge-Recruiter-Website-Demo-1min.srt)
+
 ## What It Does
 
 - Analyzes the Senior AI Engineer JD into must-haves, nice-to-haves, logistics, culture signals, and disqualifiers.

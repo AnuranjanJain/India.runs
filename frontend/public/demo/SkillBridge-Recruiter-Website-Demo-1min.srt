@@ -1,0 +1,40 @@
+﻿1
+00:00:00,000 --> 00:00:05,850
+Meet SkillBridge, built to find talent keyword filters miss.
+
+2
+00:00:06,000 --> 00:00:11,850
+Scan 100K profiles, explore top-K, export official top 100.
+
+3
+00:00:12,000 --> 00:00:17,850
+JD Intelligence extracts must-haves, disqualifiers, logistics, and culture.
+
+4
+00:00:18,000 --> 00:00:23,850
+Hybrid scoring blends semantics, career proof, behavior, and penalties.
+
+5
+00:00:24,000 --> 00:00:29,850
+Candidate details show evidence, weaknesses, trust, and risk flags.
+
+6
+00:00:30,000 --> 00:00:35,850
+Compare finalists side by side before making recruiter decisions.
+
+7
+00:00:36,000 --> 00:00:41,850
+Control Room reveals how weight changes shift rankings.
+
+8
+00:00:42,000 --> 00:00:47,850
+Export guardrails validate the exact challenge submission file.
+
+9
+00:00:48,000 --> 00:00:53,850
+The PDF deck explains approach, workflow, scoring, and results.
+
+10
+00:00:54,000 --> 00:00:59,850
+Architecture stays reproducible: React, FastAPI, offline ranker, evidence only.
+
