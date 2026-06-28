@@ -77,18 +77,43 @@ IR_TERMS = {
 EVAL_TERMS = {"ndcg", "mrr", "map", "a/b", "ab test", "offline benchmark", "evaluation", "metrics"}
 SHIP_TERMS = {"production", "deployed", "shipped", "launched", "owned", "on-call", "scale", "users"}
 CV_SPEECH_TERMS = {"image classification", "computer vision", "speech recognition", "tts", "gan", "robotics"}
+JD_CONCEPT_ALIASES = {
+    "production retrieval": ("production retrieval", "retrieval system", "search system", "semantic search", "hybrid search"),
+    "vector database": ("vector database", "vector db", "faiss", "milvus", "qdrant", "pinecone", "weaviate"),
+    "ranking evaluation": ("ranking evaluation", "ndcg", "mrr", "map", "ab test", "a/b", "offline benchmark"),
+    "python ml systems": ("python", "ml system", "machine learning system", "feature engineering", "mlops"),
+    "llm adaptation": ("fine tuning", "fine-tuning", "lora", "qlora", "peft", "rag", "llm"),
+    "product judgment": ("product", "users", "marketplace", "saas", "startup", "recruiting"),
+}
+MUST_HAVE_CONCEPTS = (
+    "production retrieval",
+    "vector database",
+    "ranking evaluation",
+    "python ml systems",
+)
+NICE_TO_HAVE_CONCEPTS = (
+    "llm adaptation",
+    "product judgment",
+)
+OPEN_SOURCE_TERMS = {"github", "open source", "oss", "kaggle", "published", "library", "package"}
 
 
 @dataclass(slots=True)
 class ScoringWeights:
+    must_have_fit: float = 1.3
+    nice_to_have_fit: float = 0.65
     semantic_fit: float = 1.0
+    seniority_alignment: float = 0.8
+    production_ai_search_proof: float = 1.2
     career_proof: float = 1.25
     skill_trust: float = 1.15
     evaluation_depth: float = 0.9
     product_startup_fit: float = 0.75
+    open_source_validation: float = 0.45
     behavioral_availability: float = 0.9
-    logistics: float = 0.65
+    salary_work_mode_location_fit: float = 0.65
     data_quality: float = 0.5
+    explanation_quality: float = 0.45
     anti_keyword_strictness: float = 1.0
 
     @classmethod
@@ -96,6 +121,9 @@ class ScoringWeights:
         base = cls()
         if not value:
             return base
+        value = dict(value)
+        if "logistics" in value and "salary_work_mode_location_fit" not in value:
+            value["salary_work_mode_location_fit"] = value["logistics"]
         allowed = set(base.__dataclass_fields__)
         data = {key: float(val) for key, val in value.items() if key in allowed}
         return cls(**{**asdict(base), **data})
@@ -146,6 +174,102 @@ def iter_candidates(path: str | Path) -> Iterable[dict[str, Any]]:
                 yield json.loads(line)
 
 
+def summarize_candidate_file(path: str | Path) -> dict[str, Any]:
+    candidate_path = Path(path)
+    summary: dict[str, Any] = {
+        "path": str(candidate_path),
+        "exists": candidate_path.exists(),
+        "format": candidate_path.suffix.lower().lstrip(".") or "unknown",
+        "total_candidates": 0,
+        "valid_candidates": 0,
+        "invalid_records": 0,
+        "missing_data_candidates": 0,
+        "estimated_size_mb": 0.0,
+    }
+    if not candidate_path.exists():
+        return summary
+    summary["estimated_size_mb"] = round(candidate_path.stat().st_size / (1024 * 1024), 2)
+    if candidate_path.suffix.lower() == ".json":
+        try:
+            data = json.loads(candidate_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            summary["invalid_records"] = 1
+            return summary
+        rows = data if isinstance(data, list) else []
+        summary["total_candidates"] = len(rows)
+        summary["valid_candidates"] = sum(isinstance(row, dict) for row in rows)
+        summary["invalid_records"] = len(rows) - summary["valid_candidates"]
+        summary["missing_data_candidates"] = sum(
+            1 for row in rows if isinstance(row, dict) and _has_missing_core_data(row)
+        )
+        return summary
+    with candidate_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            summary["total_candidates"] += 1
+            try:
+                candidate = json.loads(line)
+            except json.JSONDecodeError:
+                summary["invalid_records"] += 1
+                continue
+            if isinstance(candidate, dict):
+                summary["valid_candidates"] += 1
+                if _has_missing_core_data(candidate):
+                    summary["missing_data_candidates"] += 1
+            else:
+                summary["invalid_records"] += 1
+    return summary
+
+
+def build_rank_diagnostics(results: list[CandidateScore | dict[str, Any]], total_candidates: int | None = None) -> dict[str, Any]:
+    public = [_public_row(row) for row in results]
+    if not public:
+        return {
+            "total_candidates": total_candidates or 0,
+            "ranked_candidates": 0,
+            "score_bands": {},
+            "component_averages": {},
+            "weakest_dimensions": [],
+            "risk_flags": {},
+            "methodology": _methodology_summary(),
+        }
+    score_bands = {"hire_now": 0, "strong_review": 0, "backup": 0, "weak_fit": 0}
+    risks: dict[str, int] = {}
+    component_totals: dict[str, float] = {}
+    weakest: dict[str, int] = {}
+    for row in public:
+        score = float(row.get("score", 0))
+        if score >= 0.72:
+            score_bands["hire_now"] += 1
+        elif score >= 0.58:
+            score_bands["strong_review"] += 1
+        elif score >= 0.42:
+            score_bands["backup"] += 1
+        else:
+            score_bands["weak_fit"] += 1
+        for risk in row.get("risk_flags", []):
+            risks[str(risk)] = risks.get(str(risk), 0) + 1
+        components = row.get("components", {}) or {}
+        for key, value in components.items():
+            component_totals[key] = component_totals.get(key, 0.0) + float(value)
+        if components:
+            weakest_key = min(components, key=lambda key: float(components[key]))
+            weakest[weakest_key] = weakest.get(weakest_key, 0) + 1
+    count = len(public)
+    return {
+        "total_candidates": total_candidates if total_candidates is not None else count,
+        "ranked_candidates": count,
+        "official_export_rows": min(count, 100),
+        "exploration_rows": count,
+        "score_bands": score_bands,
+        "component_averages": {key: round(value / count, 4) for key, value in component_totals.items()},
+        "weakest_dimensions": sorted(weakest.items(), key=lambda item: (-item[1], item[0]))[:5],
+        "risk_flags": dict(sorted(risks.items(), key=lambda item: (-item[1], item[0]))[:8]),
+        "methodology": _methodology_summary(),
+    }
+
+
 def rank_candidates(
     candidates_path: str | Path,
     job_analysis: JobAnalysis | None = None,
@@ -156,6 +280,8 @@ def rank_candidates(
 ) -> list[CandidateScore]:
     if job_analysis is None:
         job_analysis = analyze_job_text(job_text or "")
+    if top_n < 1:
+        raise ValueError("top_n must be at least 1.")
     scoring_weights = weights if isinstance(weights, ScoringWeights) else ScoringWeights.from_mapping(weights)
     heap: list[tuple[float, int, CandidateScore]] = []
     for candidate in iter_candidates(candidates_path):
@@ -187,14 +313,20 @@ def score_candidate(
     skill_names = [str(skill.get("name", "")) for skill in skills]
     skill_lower = {name.lower() for name in skill_names}
 
-    semantic = _term_coverage(lower_text, job_analysis.keywords + list(IR_TERMS) + list(EVAL_TERMS))
+    must_have = _concept_fit(lower_text, MUST_HAVE_CONCEPTS)
+    nice_to_have = _concept_fit(lower_text, NICE_TO_HAVE_CONCEPTS)
+    semantic = _semantic_fit(lower_text, job_analysis)
+    seniority = _seniority_alignment(profile, career)
+    production_proof = _production_ai_search_proof(career, lower_text)
     career_proof = _career_proof(career, lower_text)
     skill_trust = _skill_trust(skills, signals)
     eval_depth = _term_coverage(lower_text, list(EVAL_TERMS))
     product_fit = _product_startup_fit(profile, career, lower_text)
+    open_source = _open_source_validation(candidate, lower_text)
     behavioral = _behavioral_availability(signals)
     logistics = _logistics_fit(profile, signals)
     data_quality = _data_quality(profile, career, skills, signals, education)
+    explanation_quality = _explanation_quality(candidate, career, skills, signals, lower_text)
 
     claimed_ai = sum(1 for skill in skill_lower if skill in AI_CORE_SKILLS or any(t in skill for t in IR_TERMS))
     proof_terms = sum(1 for term in IR_TERMS | EVAL_TERMS | SHIP_TERMS if term in lower_text)
@@ -210,14 +342,20 @@ def score_candidate(
         disqualifier_penalty += 0.08
 
     components = {
+        "must_have_fit": must_have,
+        "nice_to_have_fit": nice_to_have,
         "semantic_fit": semantic,
+        "seniority_alignment": seniority,
+        "production_ai_search_proof": production_proof,
         "career_proof": career_proof,
         "skill_trust": skill_trust,
         "evaluation_depth": eval_depth,
         "product_startup_fit": product_fit,
+        "open_source_validation": open_source,
         "behavioral_availability": behavioral,
-        "logistics": logistics,
+        "salary_work_mode_location_fit": logistics,
         "data_quality": data_quality,
+        "explanation_quality": explanation_quality,
     }
     weighted_sum = sum(components[key] * getattr(weights, key) for key in components)
     weight_total = sum(getattr(weights, key) for key in components)
@@ -281,6 +419,50 @@ def _term_coverage(text: str, terms: list[str]) -> float:
         if probe in normalized.replace("-", " "):
             matched += 1
     return _clamp(matched / min(len(terms), 14))
+
+
+def _semantic_fit(lower_text: str, job_analysis: JobAnalysis) -> float:
+    keyword_fit = _term_coverage(lower_text, job_analysis.keywords + list(IR_TERMS) + list(EVAL_TERMS))
+    concept_fit = _concept_fit(lower_text, tuple(JD_CONCEPT_ALIASES))
+    return _clamp(keyword_fit * 0.45 + concept_fit * 0.55)
+
+
+def _concept_fit(lower_text: str, concepts: tuple[str, ...]) -> float:
+    if not concepts:
+        return 0.0
+    score = 0.0
+    for concept in concepts:
+        aliases = JD_CONCEPT_ALIASES.get(concept, (concept,))
+        hits = sum(1 for alias in aliases if alias in lower_text or alias.replace("-", " ") in lower_text)
+        if hits:
+            score += min(1.0, 0.55 + (hits - 1) * 0.18)
+    return _clamp(score / len(concepts))
+
+
+def _seniority_alignment(profile: dict[str, Any], career: list[dict[str, Any]]) -> float:
+    years = float(profile.get("years_of_experience") or 0)
+    year_score = 1 - min(abs(years - 7) / 8, 1)
+    title_blob = " ".join(
+        [
+            str(profile.get("current_title", "")),
+            *(str(job.get("title", "")) for job in career[:3]),
+        ]
+    ).lower()
+    senior_title = any(term in title_blob for term in ("senior", "lead", "staff", "principal", "founding"))
+    hands_on = any(term in title_blob for term in ("engineer", "scientist", "developer", "ml", "ai", "search"))
+    return _clamp(year_score * 0.55 + (0.25 if senior_title else 0.1) + (0.2 if hands_on else 0))
+
+
+def _production_ai_search_proof(career: list[dict[str, Any]], lower_text: str) -> float:
+    if not career:
+        return 0.0
+    shipped = sum(1 for term in SHIP_TERMS if term in lower_text)
+    search = sum(1 for term in IR_TERMS if term in lower_text)
+    evals = sum(1 for term in EVAL_TERMS if term in lower_text)
+    current_job = career[0] if career else {}
+    current_blob = f"{current_job.get('title', '')} {current_job.get('description', '')}".lower()
+    current_search = any(term in current_blob for term in IR_TERMS | {"machine learning", "ai", "nlp"})
+    return _clamp(min(search / 8, 1) * 0.35 + min(shipped / 5, 1) * 0.3 + min(evals / 4, 1) * 0.2 + (0.15 if current_search else 0))
 
 
 def _career_proof(career: list[dict[str, Any]], lower_text: str) -> float:
@@ -376,6 +558,18 @@ def _logistics_fit(profile: dict[str, Any], signals: dict[str, Any]) -> float:
     return _clamp(location_score * 0.45 + mode_score * 0.2 + exp_score * 0.35)
 
 
+def _open_source_validation(candidate: dict[str, Any], lower_text: str) -> float:
+    signals = candidate.get("redrob_signals") or {}
+    explicit = sum(1 for term in OPEN_SOURCE_TERMS if term in lower_text)
+    connected = sum(
+        bool(signals.get(key))
+        for key in ("github_connected", "linkedin_connected", "portfolio_connected", "verified_email")
+    )
+    assessments = signals.get("skill_assessment_scores") or {}
+    assessment_score = min(len(assessments) / 4, 1)
+    return _clamp(min(explicit / 3, 1) * 0.45 + min(connected / 4, 1) * 0.35 + assessment_score * 0.2)
+
+
 def _data_quality(
     profile: dict[str, Any],
     career: list[dict[str, Any]],
@@ -388,6 +582,27 @@ def _data_quality(
     density = _clamp((len(career) / 3) * 0.35 + (len(skills) / 12) * 0.45 + (len(education) / 2) * 0.2)
     profile_fields = sum(bool(profile.get(key)) for key in ("summary", "headline", "current_title", "location")) / 4
     return _clamp(completeness * 0.35 + verified * 0.25 + density * 0.25 + profile_fields * 0.15)
+
+
+def _explanation_quality(
+    candidate: dict[str, Any],
+    career: list[dict[str, Any]],
+    skills: list[dict[str, Any]],
+    signals: dict[str, Any],
+    lower_text: str,
+) -> float:
+    field_depth = sum(
+        bool((candidate.get("profile") or {}).get(key))
+        for key in ("summary", "headline", "current_title", "current_company")
+    ) / 4
+    career_depth = _clamp(sum(len(str(job.get("description", ""))) for job in career[:3]) / 520)
+    skill_depth = _clamp(len(skills) / 12)
+    signal_depth = sum(
+        signals.get(key) is not None
+        for key in ("recruiter_response_rate", "notice_period_days", "last_active_date", "profile_completeness_score")
+    ) / 4
+    concrete_terms = sum(1 for term in IR_TERMS | EVAL_TERMS | SHIP_TERMS if term in lower_text)
+    return _clamp(field_depth * 0.2 + career_depth * 0.3 + skill_depth * 0.2 + signal_depth * 0.2 + min(concrete_terms / 8, 1) * 0.1)
 
 
 def _disqualifier_penalty(profile: dict[str, Any], career: list[dict[str, Any]], lower_text: str) -> float:
@@ -458,8 +673,16 @@ def _explain(
         why_not.append("Limited explicit ranking-evaluation evidence.")
     if components["career_proof"] < 0.35:
         why_not.append("Career history has limited production retrieval/ranking proof.")
-    if components["logistics"] < 0.45:
+    if components["production_ai_search_proof"] < 0.3:
+        risks.append("Weak production AI/search proof for a senior retrieval role.")
+    if components["open_source_validation"] < 0.2:
+        why_not.append("Limited external validation from connected profiles, assessments, or public proof.")
+    if components["salary_work_mode_location_fit"] < 0.45:
         why_not.append("Location or work-mode fit is weaker for Pune/Noida hybrid expectations.")
+    if float(signals.get("notice_period_days") or 0) > 60:
+        risks.append("Long notice period may slow hiring.")
+    if _days_since(signals.get("last_active_date")) > 90:
+        risks.append("Stale platform activity.")
     return evidence, risks[:5], why_not[:5]
 
 
@@ -470,6 +693,36 @@ def _reasoning(candidate: dict[str, Any], evidence: list[dict[str, str]], risks:
     strong = evidence[1]["text"] if len(evidence) > 1 else "relevant profile evidence found"
     concern = f" Concern: {risks[0]}" if risks else ""
     return f"{current} with {years} yrs; {strong}.{concern}"[:450]
+
+
+def _has_missing_core_data(candidate: dict[str, Any]) -> bool:
+    profile = candidate.get("profile") or {}
+    return not all(
+        [
+            candidate.get("candidate_id"),
+            profile.get("current_title") or profile.get("headline"),
+            profile.get("location") or profile.get("country"),
+            candidate.get("career_history"),
+            candidate.get("skills"),
+            candidate.get("redrob_signals"),
+        ]
+    )
+
+
+def _public_row(row: CandidateScore | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(row, CandidateScore):
+        return row.to_public_dict(include_candidate=False)
+    return row
+
+
+def _methodology_summary() -> list[str]:
+    return [
+        "Sparse semantic retrieval maps JD concepts to aliases instead of exact keyword matches.",
+        "Career proof and production AI/search evidence must support claimed skills.",
+        "Redrob behavioral signals affect trust through response, activity, notice, and verification.",
+        "Keyword-heavy profiles are penalized when career evidence is thin.",
+        "Official export is locked to the first 100 rows even when the UI explores deeper top-K lists.",
+    ]
 
 
 def _days_since(value: Any) -> float:

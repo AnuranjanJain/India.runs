@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
+  Database,
   Download,
   FileCheck2,
   FileText,
@@ -82,29 +83,67 @@ type RankResponse = {
   analysis: JobAnalysis;
   results: CandidateResult[];
   metrics: Record<string, number>;
+  dataset?: DatasetSummary;
+  diagnostics?: RankDiagnostics;
+};
+
+type DatasetSummary = {
+  source_label?: string;
+  total_candidates: number;
+  valid_candidates: number;
+  missing_data_candidates: number;
+  invalid_records: number;
+  official_export_rows: number;
+  supported_top_k: number[];
+  estimated_size_mb?: number;
+  mode?: string;
+};
+
+type RankDiagnostics = {
+  total_candidates: number;
+  ranked_candidates: number;
+  official_export_rows: number;
+  exploration_rows: number;
+  score_bands: Record<string, number>;
+  component_averages: Record<string, number>;
+  weakest_dimensions: Array<[string, number]>;
+  risk_flags: Record<string, number>;
+  methodology: string[];
 };
 
 type Weights = {
+  must_have_fit: number;
+  nice_to_have_fit: number;
   semantic_fit: number;
+  seniority_alignment: number;
+  production_ai_search_proof: number;
   career_proof: number;
   skill_trust: number;
   evaluation_depth: number;
   product_startup_fit: number;
+  open_source_validation: number;
   behavioral_availability: number;
-  logistics: number;
+  salary_work_mode_location_fit: number;
   data_quality: number;
+  explanation_quality: number;
   anti_keyword_strictness: number;
 };
 
 const defaultWeights: Weights = {
+  must_have_fit: 1.3,
+  nice_to_have_fit: 0.65,
   semantic_fit: 1,
+  seniority_alignment: 0.8,
+  production_ai_search_proof: 1.2,
   career_proof: 1.25,
   skill_trust: 1.15,
   evaluation_depth: 0.9,
   product_startup_fit: 0.75,
+  open_source_validation: 0.45,
   behavioral_availability: 0.9,
-  logistics: 0.65,
+  salary_work_mode_location_fit: 0.65,
   data_quality: 0.5,
+  explanation_quality: 0.45,
   anti_keyword_strictness: 1
 };
 
@@ -124,10 +163,16 @@ function App() {
   const [selected, setSelected] = React.useState<CandidateResult | null>(null);
   const [candidateDetail, setCandidateDetail] = React.useState<Candidate | null>(null);
   const [weights, setWeights] = React.useState<Weights>(defaultWeights);
+  const [topK, setTopK] = React.useState<100 | 250 | 500 | 1000>(100);
+  const [dataset, setDataset] = React.useState<DatasetSummary | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
   const [compareIds, setCompareIds] = React.useState<string[]>([]);
   const [compareRows, setCompareRows] = React.useState<CandidateResult[]>([]);
+
+  React.useEffect(() => {
+    loadDatasetSummary().then(setDataset).catch(() => undefined);
+  }, []);
 
   const runRank = async (mode = "demo") => {
     setLoading(true);
@@ -137,20 +182,22 @@ function App() {
       const response = await fetch(`${API}/api/rank`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, top_n: 100, weights })
+        body: JSON.stringify({ mode, top_n: topK, weights })
       });
       if (response.ok) {
         data = (await response.json()) as RankResponse;
       } else {
-        data = await rankStaticDemo(weights);
+        data = await rankStaticDemo(weights, topK);
       }
       setRankData(data);
+      if (data.dataset) setDataset(data.dataset);
       setSelected(data.results[0] ?? null);
       setActive("shortlist");
     } catch (err) {
       try {
-        const data = await rankStaticDemo(weights);
+        const data = await rankStaticDemo(weights, topK);
         setRankData(data);
+        if (data.dataset) setDataset(data.dataset);
         setSelected(data.results[0] ?? null);
         setActive("shortlist");
       } catch {
@@ -192,7 +239,7 @@ function App() {
     } catch {
       // Static deploy fallback below.
     }
-    const data = await rankStaticDemo(weights);
+    const data = await rankStaticDemo(weights, topK);
     setCompareRows(
       data.results
         .filter((row) => compareIds.includes(row.candidate_id))
@@ -241,9 +288,10 @@ function App() {
             <button className="ghost-button" onClick={() => setActive("control")} title="Open Control Room">
               <Settings2 size={17} /> Settings
             </button>
+            <TopKControl value={topK} onChange={setTopK} />
             <button className="primary-button" onClick={() => runRank("demo")} disabled={loading}>
               {loading ? <Loader2 className="spin" size={17} /> : <Sparkles size={17} />}
-              Rank Demo Pool
+              Rank Top {topK}
             </button>
           </div>
         </header>
@@ -251,7 +299,7 @@ function App() {
         {error && <div className="error-strip"><AlertTriangle size={16} /> {error}</div>}
 
         {active === "dashboard" && (
-          <Dashboard data={rankData} onRun={() => runRank("demo")} loading={loading} />
+          <Dashboard data={rankData} dataset={dataset} topK={topK} onTopKChange={setTopK} onRun={() => runRank("demo")} loading={loading} />
         )}
         {active === "brief" && <JudgeBrief data={rankData} onRun={() => runRank("demo")} loading={loading} />}
         {active === "jd" && <JDIntelligence analysis={analysis} />}
@@ -268,16 +316,31 @@ function App() {
           />
         )}
         {active === "control" && (
-          <ControlRoom weights={weights} setWeights={setWeights} onRun={() => runRank("custom")} />
+          <ControlRoom weights={weights} setWeights={setWeights} topK={topK} onTopKChange={setTopK} results={results} onRun={() => runRank("custom")} />
         )}
-        {active === "export" && <ExportPanel runId={rankData?.run_id} results={results} />}
+        {active === "export" && <ExportPanel runId={rankData?.run_id} results={results} topK={topK} />}
       </main>
     </div>
   );
 }
 
-function Dashboard({ data, onRun, loading }: { data: RankResponse | null; onRun: () => void; loading: boolean }) {
+function Dashboard({
+  data,
+  dataset,
+  topK,
+  onTopKChange,
+  onRun,
+  loading
+}: {
+  data: RankResponse | null;
+  dataset: DatasetSummary | null;
+  topK: 100 | 250 | 500 | 1000;
+  onTopKChange: (value: 100 | 250 | 500 | 1000) => void;
+  onRun: () => void;
+  loading: boolean;
+}) {
   const metrics = data?.metrics;
+  const diagnostics = data?.diagnostics;
   return (
     <section className="grid-page">
       <div className="hero-panel">
@@ -294,15 +357,32 @@ function Dashboard({ data, onRun, loading }: { data: RankResponse | null; onRun:
           </div>
         </div>
         <button className="primary-button large" onClick={onRun} disabled={loading}>
-          {loading ? <Loader2 className="spin" size={18} /> : <Search size={18} />} Start Ranking
+          {loading ? <Loader2 className="spin" size={18} /> : <Search size={18} />} Rank Top {topK}
         </button>
+      </div>
+      <div className="command-panel">
+        <PanelTitle icon={<Database />} title="Challenge Command Center" />
+        <div className="command-grid">
+          <Metric label="Total pool" value={compactNumber(dataset?.total_candidates ?? metrics?.total_candidates ?? 0)} icon={<Database />} />
+          <Metric label="Selected top-K" value={compactNumber(topK)} icon={<Filter />} />
+          <Metric label="Official export" value="100" icon={<LockKeyhole />} />
+          <Metric label="Missing data" value={compactNumber(dataset?.missing_data_candidates ?? metrics?.missing_data_candidates ?? 0)} icon={<AlertTriangle />} />
+        </div>
+        <div className="control-strip">
+          <div>
+            <strong>Top-K Explorer</strong>
+            <span>Explore deeper shortlists while the challenge CSV stays locked to the top 100.</span>
+          </div>
+          <TopKControl value={topK} onChange={onTopKChange} />
+        </div>
       </div>
       <div className="metric-grid">
         <Metric label="Top score" value={fmt(metrics?.top_score)} icon={<Gauge />} />
         <Metric label="Avg trust" value={fmt(metrics?.avg_trust)} icon={<ShieldCheck />} />
-        <Metric label="Candidates" value={String(metrics?.count ?? 0)} icon={<BriefcaseBusiness />} />
+        <Metric label="Exploration rows" value={String(metrics?.count ?? 0)} icon={<BriefcaseBusiness />} />
         <Metric label="Risk flags" value={String(metrics?.risk_flags ?? 0)} icon={<AlertTriangle />} />
       </div>
+      <DiagnosticsPanel diagnostics={diagnostics} />
       <div className="wide-band">
         <PanelTitle icon={<ClipboardCheck />} title="What the system evaluates" />
         <div className="signal-grid">
@@ -442,6 +522,12 @@ function Shortlist({
   onSelect: (row: CandidateResult) => void;
   selectedFull?: Candidate | null;
 }) {
+  const [query, setQuery] = React.useState("");
+  const filtered = results.filter((row) => {
+    const haystack = `${row.candidate_id} ${row.reasoning} ${row.risk_flags.join(" ")}`.toLowerCase();
+    return haystack.includes(query.toLowerCase());
+  });
+  const nearMisses = results.filter((row) => row.rank > 100 && row.rank <= 125);
   return (
     <section className="shortlist-layout">
       <div className="table-panel">
@@ -449,9 +535,13 @@ function Shortlist({
           <PanelTitle icon={<Filter />} title="Trusted Shortlist" />
           <span>{results.length || 0} ranked candidates</span>
         </div>
+        <div className="search-box">
+          <Search size={16} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Audit by candidate ID, reason, or risk" />
+        </div>
         <div className="candidate-list">
           {results.length === 0 && <EmptyState text="Run the demo ranker to generate a shortlist." />}
-          {results.map((row) => (
+          {filtered.map((row) => (
             <button
               key={row.candidate_id}
               className={selected?.candidate_id === row.candidate_id ? "candidate-row selected" : "candidate-row"}
@@ -466,6 +556,20 @@ function Shortlist({
             </button>
           ))}
         </div>
+        {nearMisses.length > 0 && (
+          <div className="near-miss-panel">
+            <PanelTitle icon={<Radar />} title="Near Misses: 101-125" />
+            <p>These candidates missed the official cutoff but remain visible for recruiter review.</p>
+            <div>
+              {nearMisses.slice(0, 8).map((row) => (
+                <button key={row.candidate_id} onClick={() => onSelect(row)}>
+                  #{row.rank} {row.candidate_id}
+                  <span>{weakestComponent(row)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       <CandidateDrawer row={selected} candidate={selectedFull} />
     </section>
@@ -580,12 +684,39 @@ function Compare({
   );
 }
 
-function ControlRoom({ weights, setWeights, onRun }: { weights: Weights; setWeights: (weights: Weights) => void; onRun: () => void }) {
+function ControlRoom({
+  weights,
+  setWeights,
+  topK,
+  onTopKChange,
+  results,
+  onRun
+}: {
+  weights: Weights;
+  setWeights: (weights: Weights) => void;
+  topK: 100 | 250 | 500 | 1000;
+  onTopKChange: (value: 100 | 250 | 500 | 1000) => void;
+  results: CandidateResult[];
+  onRun: () => void;
+}) {
+  const movers = results.slice(0, 6).map((row) => ({
+    id: row.candidate_id,
+    rank: row.rank,
+    weakest: weakestComponent(row),
+    lift: rankLiftHint(row, weights)
+  }));
   return (
     <section className="content-grid">
       <div className="main-panel">
         <PanelTitle icon={<SlidersHorizontal />} title="Recruiter Control Room" />
         <p className="lead">Tune the ranker for recruiter intent. Challenge Mode can keep these defaults locked for the final official output.</p>
+        <div className="control-strip inline">
+          <div>
+            <strong>Exploration depth</strong>
+            <span>Reranking can inspect top {topK}, while the final CSV remains top 100.</span>
+          </div>
+          <TopKControl value={topK} onChange={onTopKChange} />
+        </div>
       </div>
       <div className="slider-panel">
         {(Object.keys(weights) as Array<keyof Weights>).map((key) => (
@@ -603,17 +734,38 @@ function ControlRoom({ weights, setWeights, onRun }: { weights: Weights; setWeig
         ))}
         <div className="button-row">
           <button className="ghost-button" onClick={() => setWeights(defaultWeights)}>Reset</button>
-          <button className="primary-button" onClick={onRun}><Activity size={17} /> Rerank</button>
+          <button className="primary-button" onClick={onRun}><Activity size={17} /> Rerank Top {topK}</button>
+        </div>
+      </div>
+      <div className="main-panel">
+        <PanelTitle icon={<Activity />} title="Rank Shift Simulator" />
+        <p className="lead">Before reranking, this preview shows which dimensions are holding current top candidates back.</p>
+        <div className="shift-grid">
+          {(movers.length ? movers : [{ id: "Run ranking", rank: 0, weakest: "No candidates yet", lift: "Adjust weights after a run" }]).map((item) => (
+            <article key={item.id}>
+              <strong>{item.rank ? `#${item.rank} ${item.id}` : item.id}</strong>
+              <span>{item.weakest}</span>
+              <small>{item.lift}</small>
+            </article>
+          ))}
         </div>
       </div>
     </section>
   );
 }
 
-function ExportPanel({ runId, results }: { runId?: string; results: CandidateResult[] }) {
+function ExportPanel({ runId, results, topK }: { runId?: string; results: CandidateResult[]; topK: number }) {
   const [validation, setValidation] = React.useState<string>("");
   const brief = React.useMemo(() => buildRecruiterBrief(results), [results]);
-  const csv = React.useMemo(() => {
+  const officialRows = results.slice(0, 100);
+  const officialCsv = React.useMemo(() => {
+    const lines = ["candidate_id,rank,score,reasoning"];
+    officialRows.forEach((row, index) => {
+      lines.push(`${row.candidate_id},${row.rank},${row.score.toFixed(6)},"${row.reasoning.replace(/"/g, '""')}"`);
+    });
+    return lines.join("\n");
+  }, [officialRows]);
+  const explorationCsv = React.useMemo(() => {
     const lines = ["candidate_id,rank,score,reasoning"];
     results.forEach((row) => {
       lines.push(`${row.candidate_id},${row.rank},${row.score.toFixed(6)},"${row.reasoning.replace(/"/g, '""')}"`);
@@ -625,7 +777,7 @@ function ExportPanel({ runId, results }: { runId?: string; results: CandidateRes
       const response = await fetch(`${API}/api/validate-submission`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ csv })
+        body: JSON.stringify({ csv: officialCsv })
       });
       if (response.ok) {
         const data = await response.json();
@@ -635,15 +787,15 @@ function ExportPanel({ runId, results }: { runId?: string; results: CandidateRes
     } catch {
       // Static deploy fallback below.
     }
-    const lines = csv.trim().split(/\r?\n/);
+    const lines = officialCsv.trim().split(/\r?\n/);
     setValidation(lines.length === 101 ? "Valid CSV structure." : `Expected 101 CSV lines, found ${lines.length}.`);
   };
-  const downloadCsv = () => {
-    const blob = new Blob([`${csv}\n`], { type: "text/csv;charset=utf-8" });
+  const downloadCsv = (content = officialCsv, suffix = "official-top-100") => {
+    const blob = new Blob([`${content}\n`], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${runId ?? "skillbridge-demo"}.csv`;
+    anchor.download = `${runId ?? "skillbridge-demo"}-${suffix}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -651,10 +803,20 @@ function ExportPanel({ runId, results }: { runId?: string; results: CandidateRes
     <section className="content-grid">
       <div className="main-panel">
         <PanelTitle icon={<Download />} title="Submission Export" />
-        <p className="lead">Export the exact challenge columns. Full submissions should be generated by the offline CLI against `candidates.jsonl`.</p>
+        <p className="lead">Official challenge export is always locked to 100 rows. The top-{topK} exploration file is for recruiter review, not final submission.</p>
+        <div className="export-guardrail">
+          <LockKeyhole size={18} />
+          <div>
+            <strong>Official Submission Guardrail</strong>
+            <span>{officialRows.length} official rows ready from {results.length} explored candidates.</span>
+          </div>
+        </div>
         <div className="button-row">
-          <button className="primary-button" onClick={downloadCsv} disabled={!results.length}>
-            <Download size={17} /> Download CSV
+          <button className="primary-button" onClick={() => downloadCsv()} disabled={officialRows.length < 100}>
+            <Download size={17} /> Official Top 100 CSV
+          </button>
+          <button className="ghost-button" onClick={() => downloadCsv(explorationCsv, `exploration-top-${results.length}`)} disabled={!results.length}>
+            <Download size={17} /> Exploration CSV
           </button>
           <button className="ghost-button" onClick={validate} disabled={!results.length}><ShieldCheck size={17} /> Validate</button>
         </div>
@@ -665,7 +827,7 @@ function ExportPanel({ runId, results }: { runId?: string; results: CandidateRes
         <p className="lead">A judge-friendly explanation of what the shortlist proves beyond CSV compliance.</p>
         <pre className="memo-preview">{brief}</pre>
       </div>
-      <pre className="csv-preview">{csv || "Run ranking to preview the submission CSV."}</pre>
+      <pre className="csv-preview">{officialCsv || "Run ranking to preview the official top-100 submission CSV."}</pre>
     </section>
   );
 }
@@ -695,6 +857,56 @@ function Metric({ label, value, icon }: { label: string; value: string; icon: Re
   return <article className="metric"><span>{icon}</span><small>{label}</small><strong>{value}</strong></article>;
 }
 
+function TopKControl({ value, onChange }: { value: 100 | 250 | 500 | 1000; onChange: (value: 100 | 250 | 500 | 1000) => void }) {
+  return (
+    <div className="topk-control" aria-label="Top K explorer">
+      {([100, 250, 500, 1000] as const).map((option) => (
+        <button key={option} className={value === option ? "active" : ""} onClick={() => onChange(option)}>
+          {option}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DiagnosticsPanel({ diagnostics }: { diagnostics?: RankDiagnostics }) {
+  const bands = diagnostics?.score_bands ?? {};
+  const weakest = diagnostics?.weakest_dimensions ?? [];
+  const risks = Object.entries(diagnostics?.risk_flags ?? {});
+  const methodology = diagnostics?.methodology ?? [
+    "Hybrid ranking blends semantic JD concepts, career proof, Redrob behavior, logistics, and anti-keyword-stuffing penalties."
+  ];
+  return (
+    <div className="wide-band diagnostic-band">
+      <PanelTitle icon={<Radar />} title="Hybrid Ranking Diagnostics" />
+      <div className="diagnostic-grid">
+        <article>
+          <strong>Score bands</strong>
+          <span>Hire now {bands.hire_now ?? 0}</span>
+          <span>Strong review {bands.strong_review ?? 0}</span>
+          <span>Backup {bands.backup ?? 0}</span>
+        </article>
+        <article>
+          <strong>Weakest dimensions</strong>
+          {(weakest.length ? weakest : [["Run ranking", 0] as [string, number]]).map(([key, count]) => (
+            <span key={key}>{labelize(key)} {count ? `(${count})` : ""}</span>
+          ))}
+        </article>
+        <article>
+          <strong>Top risk flags</strong>
+          {(risks.length ? risks : [["No run yet", 0]]).slice(0, 3).map(([key, count]) => (
+            <span key={key}>{key} {count ? `(${count})` : ""}</span>
+          ))}
+        </article>
+        <article>
+          <strong>Method</strong>
+          {methodology.slice(0, 3).map((item) => <span key={item}>{item}</span>)}
+        </article>
+      </div>
+    </div>
+  );
+}
+
 function PanelTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
   return <div className="panel-title"><span>{icon}</span><h2>{title}</h2></div>;
 }
@@ -710,6 +922,10 @@ function EmptyState({ text }: { text: string }) {
 
 function fmt(value?: number) {
   return typeof value === "number" ? String(Math.round(value * 100)) : "0";
+}
+
+function compactNumber(value: number) {
+  return new Intl.NumberFormat("en", { notation: value >= 10000 ? "compact" : "standard" }).format(value);
 }
 
 function labelize(value: string) {
@@ -747,7 +963,7 @@ function fingerprintFor(row: CandidateResult) {
   tags.push(row.components.career_proof >= 0.55 ? "Proof-heavy" : "Proof-light");
   tags.push(row.trust_score >= 0.62 ? "High-trust" : "Needs validation");
   tags.push(row.components.behavioral_availability >= 0.55 ? "Reachable" : "Availability risk");
-  tags.push(row.components.logistics >= 0.7 ? "Logistics fit" : "Logistics watch");
+  tags.push((row.components.salary_work_mode_location_fit ?? row.components.logistics ?? 0) >= 0.7 ? "Logistics fit" : "Logistics watch");
   if (row.risk_flags.length) tags.push(`${row.risk_flags.length} risk flag${row.risk_flags.length > 1 ? "s" : ""}`);
   else tags.push("Clean risk pass");
   return tags;
@@ -759,6 +975,20 @@ function summarizeProof(results: CandidateResult[]) {
   const risks = results.reduce((sum, row) => sum + row.risk_flags.length, 0);
   const avgTrust = `${Math.round((results.reduce((sum, row) => sum + row.trust_score, 0) / results.length) * 100)}%`;
   return { evidence, risks, avgTrust };
+}
+
+function weakestComponent(row: CandidateResult) {
+  const entries = Object.entries(row.components);
+  if (!entries.length) return "No component data";
+  const [key, value] = entries.sort((a, b) => a[1] - b[1])[0];
+  return `${labelize(key)} is the current constraint at ${Math.round(value * 100)}%.`;
+}
+
+function rankLiftHint(row: CandidateResult, weights: Weights) {
+  const weak = Object.entries(row.components).sort((a, b) => a[1] - b[1])[0]?.[0] as keyof Weights | undefined;
+  if (!weak || weak === "anti_keyword_strictness") return "No obvious weight lever.";
+  const current = weights[weak] ?? 1;
+  return current < 1 ? "Increasing this weight may move similar candidates down." : "Lowering this weight may widen the shortlist.";
 }
 
 function buildRecruiterBrief(results: CandidateResult[]) {
@@ -784,13 +1014,26 @@ function buildRecruiterBrief(results: CandidateResult[]) {
   ].join("\n");
 }
 
-async function rankStaticDemo(weights: Weights): Promise<RankResponse> {
+async function loadDatasetSummary(): Promise<DatasetSummary> {
+  try {
+    const response = await fetch(`${API}/api/dataset/summary`);
+    if (response.ok) return (await response.json()) as DatasetSummary;
+  } catch {
+    // Static deploy fallback below.
+  }
+  const candidates = await loadStaticCandidates();
+  return staticDatasetSummary(candidates.length);
+}
+
+async function rankStaticDemo(weights: Weights, topK = 100): Promise<RankResponse> {
   const candidates = await loadStaticCandidates();
   const results = candidates
     .map((candidate) => scoreStaticCandidate(candidate, weights))
     .sort((a, b) => b.score - a.score || a.candidate_id.localeCompare(b.candidate_id))
-    .slice(0, 100)
+    .slice(0, topK)
     .map((row, index) => ({ ...row, rank: index + 1 }));
+  const dataset = staticDatasetSummary(candidates.length);
+  const diagnostics = buildStaticDiagnostics(results, candidates.length);
   return {
     run_id: "run_static_demo",
     job_id: "job_static_demo",
@@ -801,8 +1044,61 @@ async function rankStaticDemo(weights: Weights): Promise<RankResponse> {
       top_score: Math.max(...results.map((row) => row.score)),
       avg_score: results.reduce((sum, row) => sum + row.score, 0) / results.length,
       avg_trust: results.reduce((sum, row) => sum + row.trust_score, 0) / results.length,
-      risk_flags: results.reduce((sum, row) => sum + row.risk_flags.length, 0)
-    }
+      risk_flags: results.reduce((sum, row) => sum + row.risk_flags.length, 0),
+      selected_top_k: results.length,
+      official_export_rows: Math.min(results.length, 100),
+      total_candidates: candidates.length,
+      valid_candidates: candidates.length,
+      missing_data_candidates: 0
+    },
+    dataset,
+    diagnostics
+  };
+}
+
+function staticDatasetSummary(total: number): DatasetSummary {
+  return {
+    source_label: "Demo pool",
+    total_candidates: total,
+    valid_candidates: total,
+    missing_data_candidates: 0,
+    invalid_records: 0,
+    official_export_rows: 100,
+    supported_top_k: [100, 250, 500, 1000],
+    mode: "demo"
+  };
+}
+
+function buildStaticDiagnostics(results: CandidateResult[], totalCandidates: number): RankDiagnostics {
+  const score_bands = {
+    hire_now: results.filter((row) => row.score >= 0.72).length,
+    strong_review: results.filter((row) => row.score >= 0.58 && row.score < 0.72).length,
+    backup: results.filter((row) => row.score >= 0.42 && row.score < 0.58).length,
+    weak_fit: results.filter((row) => row.score < 0.42).length
+  };
+  const risk_flags: Record<string, number> = {};
+  const componentTotals: Record<string, number> = {};
+  const weakest: Record<string, number> = {};
+  results.forEach((row) => {
+    row.risk_flags.forEach((risk) => { risk_flags[risk] = (risk_flags[risk] ?? 0) + 1; });
+    Object.entries(row.components).forEach(([key, value]) => { componentTotals[key] = (componentTotals[key] ?? 0) + value; });
+    const weak = Object.entries(row.components).sort((a, b) => a[1] - b[1])[0]?.[0];
+    if (weak) weakest[weak] = (weakest[weak] ?? 0) + 1;
+  });
+  return {
+    total_candidates: totalCandidates,
+    ranked_candidates: results.length,
+    official_export_rows: Math.min(results.length, 100),
+    exploration_rows: results.length,
+    score_bands,
+    component_averages: Object.fromEntries(Object.entries(componentTotals).map(([key, value]) => [key, Number((value / Math.max(results.length, 1)).toFixed(4))])),
+    weakest_dimensions: Object.entries(weakest).sort((a, b) => b[1] - a[1]).slice(0, 5),
+    risk_flags,
+    methodology: [
+      "Sparse semantic concepts catch aliases like vector DB, hybrid search, and ranking metrics.",
+      "Career proof must support claimed AI skills before a candidate reaches the top band.",
+      "Official export remains exactly 100 rows even when the UI explores deeper top-K pools."
+    ]
   };
 }
 
@@ -847,7 +1143,11 @@ function scoreStaticCandidate(candidate: Candidate, weights: Weights): Candidate
   const text = `${profile.headline ?? ""} ${profile.summary ?? ""} ${profile.current_title ?? ""} ${skills.map((s) => s.name).join(" ")} ${career.map((job) => `${job.title} ${job.description}`).join(" ")}`.toLowerCase();
   const irTerms = ["embedding", "retrieval", "ranking", "ranker", "search", "recommendation", "vector", "semantic", "faiss", "milvus", "qdrant", "weaviate", "pinecone"];
   const evalTerms = ["ndcg", "mrr", "map", "a/b", "evaluation", "benchmark", "metrics"];
+  const must_have_fit = coverage(text, ["production", "retrieval", "ranking", "vector", "python", "evaluation", "mlops"], 7);
+  const nice_to_have_fit = coverage(text, ["lora", "qlora", "peft", "marketplace", "startup", "distributed", "open source"], 7);
   const semantic_fit = coverage(text, [...staticAnalysis.keywords, ...irTerms, ...evalTerms], 16);
+  const seniority_alignment = clamp((profile.years_of_experience ? 1 - Math.min(Math.abs(Number(profile.years_of_experience) - 7) / 8, 1) : 0.35) + (text.includes("senior") || text.includes("lead") ? 0.18 : 0));
+  const production_ai_search_proof = clamp(coverage(text, [...irTerms, "production", "deployed", "shipped", "owned", "scale"], 12));
   const career_proof = clamp(coverage(text, [...irTerms, "production", "deployed", "shipped", "owned", "scale"], 12));
   const relevantSkills = skills.filter((skill) => ["python", "nlp", "llm", "lora", ...irTerms].some((term) => skill.name.toLowerCase().includes(term)));
   const skill_trust = relevantSkills.length
@@ -855,24 +1155,33 @@ function scoreStaticCandidate(candidate: Candidate, weights: Weights): Candidate
     : 0;
   const evaluation_depth = coverage(text, evalTerms, 7);
   const product_startup_fit = clamp(0.38 + coverage(text, ["product", "users", "saas", "marketplace", "startup"], 8) * 0.45);
+  const open_source_validation = clamp(coverage(text, ["github", "open source", "oss", "kaggle", "published"], 5) * 0.55 + (signals.linkedin_connected ? 0.22 : 0) + (signals.verified_email ? 0.18 : 0));
   const responseRate = Number(signals.recruiter_response_rate ?? 0);
   const notice = Number(signals.notice_period_days ?? 180);
   const behavioral_availability = clamp(responseRate * 0.45 + (signals.open_to_work_flag ? 0.18 : 0) + (1 - Math.min(notice / 120, 1)) * 0.25);
   const location = `${profile.location ?? ""} ${profile.country ?? ""}`.toLowerCase();
-  const logistics = clamp((location.includes("india") ? 0.7 : 0.35) + (signals.willing_to_relocate ? 0.15 : 0));
+  const salary_work_mode_location_fit = clamp((location.includes("india") ? 0.7 : 0.35) + (signals.willing_to_relocate ? 0.15 : 0));
   const data_quality = clamp(Number(signals.profile_completeness_score ?? 0) / 100);
-  const components = { semantic_fit, career_proof, skill_trust, evaluation_depth, product_startup_fit, behavioral_availability, logistics, data_quality };
-  let score = clamp(
-    (semantic_fit * weights.semantic_fit +
-      career_proof * weights.career_proof +
-      skill_trust * weights.skill_trust +
-      evaluation_depth * weights.evaluation_depth +
-      product_startup_fit * weights.product_startup_fit +
-      behavioral_availability * weights.behavioral_availability +
-      logistics * weights.logistics +
-      data_quality * weights.data_quality) /
-      Math.max(weights.semantic_fit + weights.career_proof + weights.skill_trust + weights.evaluation_depth + weights.product_startup_fit + weights.behavioral_availability + weights.logistics + weights.data_quality, 0.1)
-  );
+  const explanation_quality = clamp(data_quality * 0.35 + career_proof * 0.35 + skill_trust * 0.15 + behavioral_availability * 0.15);
+  const components = {
+    must_have_fit,
+    nice_to_have_fit,
+    semantic_fit,
+    seniority_alignment,
+    production_ai_search_proof,
+    career_proof,
+    skill_trust,
+    evaluation_depth,
+    product_startup_fit,
+    open_source_validation,
+    behavioral_availability,
+    salary_work_mode_location_fit,
+    data_quality,
+    explanation_quality
+  };
+  const weightedTotal = Object.entries(components).reduce((sum, [key, value]) => sum + value * (weights[key as keyof Weights] ?? 1), 0);
+  const weightTotal = Object.keys(components).reduce((sum, key) => sum + (weights[key as keyof Weights] ?? 1), 0);
+  let score = clamp(weightedTotal / Math.max(weightTotal, 0.1));
   const risk_flags: string[] = [];
   const why_not_higher: string[] = [];
   if (skill_trust > 0.55 && career_proof < 0.25) {
@@ -886,6 +1195,8 @@ function scoreStaticCandidate(candidate: Candidate, weights: Weights): Candidate
   }
   if (evaluation_depth < 0.25) why_not_higher.push("Limited explicit ranking-evaluation evidence.");
   if (career_proof < 0.35) why_not_higher.push("Career history has limited production retrieval/ranking proof.");
+  if (production_ai_search_proof < 0.3) risk_flags.push("Weak production AI/search proof for a senior retrieval role.");
+  if (open_source_validation < 0.2) why_not_higher.push("Limited external validation from connected profiles, assessments, or public proof.");
   const topSkills = skills.slice(0, 4).map((skill) => skill.name);
   const evidence = [
     { source: "career_history", text: `${profile.current_title ?? "Candidate"} with ${profile.years_of_experience ?? "?"} years of experience.` },
@@ -896,7 +1207,7 @@ function scoreStaticCandidate(candidate: Candidate, weights: Weights): Candidate
     candidate_id: candidate.candidate_id,
     rank: 0,
     score: Number(score.toFixed(6)),
-    trust_score: Number(clamp(data_quality * 0.4 + behavioral_availability * 0.3 + career_proof * 0.3).toFixed(4)),
+    trust_score: Number(clamp(data_quality * 0.35 + behavioral_availability * 0.25 + career_proof * 0.25 + skill_trust * 0.15).toFixed(4)),
     reasoning: `${profile.current_title ?? "Candidate"} with ${profile.years_of_experience ?? "?"} yrs; ${evidence[1].text}.${risk_flags[0] ? ` Concern: ${risk_flags[0]}` : ""}`,
     evidence,
     risk_flags,

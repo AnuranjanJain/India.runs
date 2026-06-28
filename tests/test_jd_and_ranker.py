@@ -4,7 +4,14 @@ from pathlib import Path
 
 from skillbridge_recruiter.document import extract_docx_text
 from skillbridge_recruiter.jd import analyze_job_text
-from skillbridge_recruiter.ranker import ScoringWeights, rank_candidates, score_candidate
+from skillbridge_recruiter.ranker import (
+    ScoringWeights,
+    build_rank_diagnostics,
+    rank_candidates,
+    score_candidate,
+    summarize_candidate_file,
+    write_submission_csv,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -96,3 +103,34 @@ def test_sample_ranking_returns_deterministic_top_rows():
     assert len(results) == 10
     assert [row.rank for row in results] == list(range(1, 11))
     assert results == sorted(results, key=lambda row: (-row.score, row.candidate_id))
+
+
+def test_top_k_exploration_supports_deeper_shortlists():
+    analysis = analyze_job_text("Senior AI Engineer retrieval ranking vector Python")
+    for top_n in (100, 250, 500, 1000):
+        results = rank_candidates(ROOT / "data" / "sample_candidates.json", analysis, top_n=top_n)
+        assert len(results) == min(top_n, summarize_candidate_file(ROOT / "data" / "sample_candidates.json")["total_candidates"])
+        assert [row.rank for row in results] == list(range(1, len(results) + 1))
+
+
+def test_official_csv_export_stays_locked_to_top_100(tmp_path):
+    analysis = analyze_job_text("Senior AI Engineer retrieval ranking vector Python")
+    results = rank_candidates(ROOT / "data" / "demo_candidates.json", analysis, top_n=250)
+    out = tmp_path / "submission.csv"
+    write_submission_csv(results, out)
+    lines = out.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 101
+    assert lines[0] == "candidate_id,rank,score,reasoning"
+
+
+def test_dataset_summary_and_diagnostics_surface_command_center_metrics():
+    summary = summarize_candidate_file(ROOT / "data" / "sample_candidates.json")
+    assert summary["total_candidates"] == 50
+    assert summary["valid_candidates"] == summary["total_candidates"]
+    analysis = analyze_job_text("Senior AI Engineer retrieval ranking vector Python")
+    results = rank_candidates(ROOT / "data" / "sample_candidates.json", analysis, top_n=10)
+    diagnostics = build_rank_diagnostics(results, summary["total_candidates"])
+    assert diagnostics["total_candidates"] == summary["total_candidates"]
+    assert diagnostics["official_export_rows"] == 10
+    assert diagnostics["exploration_rows"] == 10
+    assert diagnostics["component_averages"]["must_have_fit"] >= 0
