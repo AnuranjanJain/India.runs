@@ -120,6 +120,19 @@ type RankDiagnostics = {
   methodology: string[];
 };
 
+type RankProgress = {
+  active: boolean;
+  value: number;
+  stage: string;
+  detail: string;
+  scanned: number;
+  total: number;
+  chunksDone: number;
+  chunksTotal: number;
+};
+
+type RankProgressUpdate = Partial<Omit<RankProgress, "active">>;
+
 type Weights = {
   must_have_fit: number;
   nice_to_have_fit: number;
@@ -166,6 +179,17 @@ const tabs = [
   ["export", "Export", Download]
 ] as const;
 
+const idleRankProgress: RankProgress = {
+  active: false,
+  value: 0,
+  stage: "Ready",
+  detail: "Run ranking to scan the candidate pool.",
+  scanned: 0,
+  total: 0,
+  chunksDone: 0,
+  chunksTotal: 0
+};
+
 function App() {
   const [active, setActive] = React.useState<(typeof tabs)[number][0]>("dashboard");
   const [rankData, setRankData] = React.useState<RankResponse | null>(null);
@@ -175,17 +199,34 @@ function App() {
   const [topK, setTopK] = React.useState<100 | 250 | 500 | 1000>(100);
   const [dataset, setDataset] = React.useState<DatasetSummary | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [rankProgress, setRankProgress] = React.useState<RankProgress>(idleRankProgress);
   const [error, setError] = React.useState("");
   const [compareIds, setCompareIds] = React.useState<string[]>([]);
   const [compareRows, setCompareRows] = React.useState<CandidateResult[]>([]);
+  const rankRunToken = React.useRef(0);
 
   React.useEffect(() => {
     loadDatasetSummary().then(setDataset).catch(() => undefined);
   }, []);
 
+  const updateRankProgress = React.useCallback((next: RankProgressUpdate) => {
+    setRankProgress((current) => ({ ...current, active: true, ...next }));
+  }, []);
+
   const runRank = async (mode = "demo") => {
+    const token = rankRunToken.current + 1;
+    rankRunToken.current = token;
     setLoading(true);
     setError("");
+    updateRankProgress({
+      value: 4,
+      stage: "Starting rank run",
+      detail: "Checking API first, then falling back to the hosted candidate pool if needed.",
+      scanned: 0,
+      total: dataset?.total_candidates ?? 0,
+      chunksDone: 0,
+      chunksTotal: 0
+    });
     try {
       let data: RankResponse;
       const response = await fetch(`${API}/api/rank`, {
@@ -194,17 +235,36 @@ function App() {
         body: JSON.stringify({ mode, top_n: topK, weights })
       });
       if (response.ok) {
+        updateRankProgress({
+          value: 82,
+          stage: "API rank complete",
+          detail: "Preparing shortlist and diagnostics for the recruiter view."
+        });
         data = (await response.json()) as RankResponse;
       } else {
-        data = await rankStaticDemo(weights, topK);
+        data = await rankStaticDemo(weights, topK, updateRankProgress);
       }
+      updateRankProgress({
+        value: 96,
+        stage: "Finalizing shortlist",
+        detail: `Preparing ${Math.min(data.results.length, topK)} ranked candidates for review.`,
+        scanned: data.metrics.total_candidates ?? data.dataset?.total_candidates ?? 0,
+        total: data.metrics.total_candidates ?? data.dataset?.total_candidates ?? 0
+      });
       setRankData(data);
       if (data.dataset) setDataset(data.dataset);
       setSelected(data.results[0] ?? null);
       setActive("shortlist");
     } catch (err) {
       try {
-        const data = await rankStaticDemo(weights, topK);
+        const data = await rankStaticDemo(weights, topK, updateRankProgress);
+        updateRankProgress({
+          value: 96,
+          stage: "Finalizing shortlist",
+          detail: `Preparing ${Math.min(data.results.length, topK)} ranked candidates for review.`,
+          scanned: data.metrics.total_candidates ?? data.dataset?.total_candidates ?? 0,
+          total: data.metrics.total_candidates ?? data.dataset?.total_candidates ?? 0
+        });
         setRankData(data);
         if (data.dataset) setDataset(data.dataset);
         setSelected(data.results[0] ?? null);
@@ -213,6 +273,18 @@ function App() {
         setError(err instanceof Error ? err.message : "Ranking failed");
       }
     } finally {
+      setRankProgress((current) => ({
+        ...current,
+        active: true,
+        value: current.value >= 96 ? 100 : current.value,
+        stage: current.value >= 96 ? "Shortlist ready" : current.stage,
+        detail: current.value >= 96 ? "Ranking complete. Review the shortlist, compare candidates, or export the official top 100." : current.detail
+      }));
+      window.setTimeout(() => {
+        if (rankRunToken.current === token) {
+          setRankProgress((current) => ({ ...current, active: false }));
+        }
+      }, 1400);
       setLoading(false);
     }
   };
@@ -306,9 +378,10 @@ function App() {
         </header>
 
         {error && <div className="error-strip"><AlertTriangle size={16} /> {error}</div>}
+        {(loading || rankProgress.active) && <RankProgressBar progress={rankProgress} />}
 
         {active === "dashboard" && (
-          <Dashboard data={rankData} dataset={dataset} topK={topK} onTopKChange={setTopK} onRun={() => runRank("demo")} loading={loading} />
+          <Dashboard data={rankData} dataset={dataset} topK={topK} onTopKChange={setTopK} onRun={() => runRank("demo")} loading={loading} progress={rankProgress} />
         )}
         {active === "brief" && <JudgeBrief data={rankData} onRun={() => runRank("demo")} loading={loading} />}
         {active === "jd" && <JDIntelligence analysis={analysis} />}
@@ -333,13 +406,39 @@ function App() {
   );
 }
 
+function RankProgressBar({ progress, compact = false }: { progress: RankProgress; compact?: boolean }) {
+  const percent = Math.max(0, Math.min(100, Math.round(progress.value)));
+  const scanned = progress.scanned ? compactNumber(progress.scanned) : "0";
+  const total = progress.total ? compactNumber(progress.total) : "candidate pool";
+  const chunkText = progress.chunksTotal ? `${progress.chunksDone}/${progress.chunksTotal} chunks` : "initializing";
+  return (
+    <div className={compact ? "rank-progress compact" : "rank-progress"} aria-live="polite">
+      <div className="rank-progress-head">
+        <div>
+          <strong>{progress.stage}</strong>
+          <span>{progress.detail}</span>
+        </div>
+        <b>{percent}%</b>
+      </div>
+      <div className="progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+        <span style={{ width: `${percent}%` }} />
+      </div>
+      <div className="rank-progress-meta">
+        <span>{scanned} / {total} scanned</span>
+        <span>{chunkText}</span>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({
   data,
   dataset,
   topK,
   onTopKChange,
   onRun,
-  loading
+  loading,
+  progress
 }: {
   data: RankResponse | null;
   dataset: DatasetSummary | null;
@@ -347,6 +446,7 @@ function Dashboard({
   onTopKChange: (value: 100 | 250 | 500 | 1000) => void;
   onRun: () => void;
   loading: boolean;
+  progress: RankProgress;
 }) {
   const metrics = data?.metrics;
   const diagnostics = data?.diagnostics;
@@ -368,6 +468,7 @@ function Dashboard({
         <button className="primary-button large" onClick={onRun} disabled={loading}>
           {loading ? <Loader2 className="spin" size={18} /> : <Search size={18} />} Rank Top {topK}
         </button>
+        {(loading || progress.active) && <RankProgressBar progress={progress} compact />}
       </div>
       <div className="command-panel">
         <PanelTitle icon={<Database />} title="Challenge Command Center" />
@@ -1036,27 +1137,114 @@ async function loadDatasetSummary(): Promise<DatasetSummary> {
   return staticDatasetSummary(candidates.length, "Demo pool");
 }
 
-async function rankStaticDemo(weights: Weights, topK = 100): Promise<RankResponse> {
+async function rankStaticDemo(
+  weights: Weights,
+  topK = 100,
+  onProgress?: (next: RankProgressUpdate) => void
+): Promise<RankResponse> {
+  onProgress?.({
+    value: 10,
+    stage: "Loading candidate manifest",
+    detail: "Finding hosted dataset chunks for the GitHub Pages demo.",
+    scanned: 0,
+    total: 0,
+    chunksDone: 0,
+    chunksTotal: 0
+  });
   const manifest = await loadStaticManifest();
   let results: CandidateResult[] = [];
   let totalCandidates = 0;
   if (manifest) {
     totalCandidates = manifest.total_candidates;
-    for (const chunk of manifest.chunks) {
+    onProgress?.({
+      value: 14,
+      stage: "Scanning hosted candidate pool",
+      detail: `Loading ${manifest.chunks.length} dataset chunks and keeping the strongest top ${topK}.`,
+      scanned: 0,
+      total: totalCandidates,
+      chunksDone: 0,
+      chunksTotal: manifest.chunks.length
+    });
+    for (const [index, chunk] of manifest.chunks.entries()) {
+      const chunkStartPercent = 14 + (index / Math.max(manifest.chunks.length, 1)) * 76;
+      onProgress?.({
+        value: Math.round(chunkStartPercent),
+        stage: "Loading candidate chunk",
+        detail: `Fetching ${chunk.file} from the hosted 100K pool.`,
+        scanned: Math.min(index * manifest.chunk_size, totalCandidates),
+        total: totalCandidates,
+        chunksDone: index,
+        chunksTotal: manifest.chunks.length
+      });
       const candidates = await loadStaticChunk(chunk.file);
+      onProgress?.({
+        value: Math.round(chunkStartPercent + 3),
+        stage: "Scoring candidate chunk",
+        detail: `Scoring ${compactNumber(candidates.length)} candidates with hybrid evidence checks.`,
+        scanned: Math.min(index * manifest.chunk_size, totalCandidates),
+        total: totalCandidates,
+        chunksDone: index,
+        chunksTotal: manifest.chunks.length
+      });
       const scored = candidates.map((candidate) => scoreStaticCandidate(candidate, weights));
       results = [...results, ...scored]
         .sort((a, b) => b.score - a.score || a.candidate_id.localeCompare(b.candidate_id))
         .slice(0, topK);
+      onProgress?.({
+        value: Math.round(14 + ((index + 1) / Math.max(manifest.chunks.length, 1)) * 76),
+        stage: "Shortlist is improving",
+        detail: `Chunk ${index + 1} scored. Current best ${results.length} candidates retained.`,
+        scanned: Math.min((index + 1) * manifest.chunk_size, totalCandidates),
+        total: totalCandidates,
+        chunksDone: index + 1,
+        chunksTotal: manifest.chunks.length
+      });
+      await allowProgressPaint();
     }
   } else {
+    onProgress?.({
+      value: 18,
+      stage: "Loading demo candidate file",
+      detail: "Hosted chunk manifest was not found, using the bundled demo pool.",
+      scanned: 0,
+      total: 0,
+      chunksDone: 0,
+      chunksTotal: 1
+    });
     const candidates = await loadStaticCandidates();
     totalCandidates = candidates.length;
+    onProgress?.({
+      value: 46,
+      stage: "Scoring demo pool",
+      detail: `Scoring ${compactNumber(totalCandidates)} bundled candidates.`,
+      scanned: 0,
+      total: totalCandidates,
+      chunksDone: 0,
+      chunksTotal: 1
+    });
     results = candidates
       .map((candidate) => scoreStaticCandidate(candidate, weights))
       .sort((a, b) => b.score - a.score || a.candidate_id.localeCompare(b.candidate_id))
       .slice(0, topK);
+    onProgress?.({
+      value: 90,
+      stage: "Demo pool scored",
+      detail: `Current best ${results.length} candidates retained.`,
+      scanned: totalCandidates,
+      total: totalCandidates,
+      chunksDone: 1,
+      chunksTotal: 1
+    });
   }
+  onProgress?.({
+    value: 92,
+    stage: "Building diagnostics",
+    detail: "Calculating score bands, weakest dimensions, trust, and risk summaries.",
+    scanned: totalCandidates,
+    total: totalCandidates,
+    chunksDone: manifest?.chunks.length ?? 1,
+    chunksTotal: manifest?.chunks.length ?? 1
+  });
   results = results.map((row, index) => ({ ...row, rank: index + 1 }));
   const dataset = staticDatasetSummary(totalCandidates, manifest ? "Hosted 100K pool" : "Demo pool");
   const diagnostics = buildStaticDiagnostics(results, totalCandidates);
@@ -1286,6 +1474,10 @@ function coverage(text: string, terms: string[], denominator: number) {
 
 function clamp(value: number) {
   return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function allowProgressPaint() {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, 0));
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
